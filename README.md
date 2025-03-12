@@ -12,6 +12,7 @@
 - 안전 검사 기능으로 위험한 작업 방지
 - 키보드/마우스 동작 실시간 모니터링
 - OpenAI Agents SDK 기반 학습 도우미 시스템 (터미널 및 웹 인터페이스)
+- 웹 검색 에이전트로 실시간 정보 및 최신 데이터 검색 가능
 
 ## 필수 사항
 
@@ -19,6 +20,7 @@
 - OpenAI API 키 (`.env` 파일에 설정)
 - Playwright 브라우저 드라이버
 - Gradio (웹 인터페이스 사용 시)
+- SerpAPI 키 (웹 검색 기능 사용 시, 선택사항)
 
 ## 설치 방법
 
@@ -46,6 +48,7 @@ playwright install chromium
 `.env` 파일을 생성하고 다음 내용을 추가:
 ```
 OPENAI_API_KEY=your_api_key_here
+SERPAPI_KEY=your_serpapi_key_here  # 웹 검색 기능 사용 시 (선택사항)
 ```
 
 5. OpenAI Agents SDK 설치 (학습 도우미 시스템 사용 시):
@@ -56,6 +59,11 @@ pip install openai-agents
 6. Gradio 설치 (웹 인터페이스 사용 시):
 ```bash
 pip install gradio
+```
+
+7. 웹 검색 의존성 설치 (웹 검색 기능 사용 시):
+```bash
+pip install aiohttp
 ```
 
 ## 사용 방법
@@ -83,6 +91,7 @@ python learning_assistant_agents.py
 - 프로그래밍 관련 질문 (Python, JavaScript, Java 등)
 - 언어 학습 관련 질문 (영어, 일본어, 중국어 등)
 - 역사 관련 질문 (세계사, 한국사)
+- 웹 검색 관련 질문 (최신 뉴스, 날씨, 실시간 정보)
 
 ### 학습 도우미 시스템 (웹 인터페이스)
 Gradio 웹 인터페이스를 사용하여 학습 도우미 시스템을 실행:
@@ -101,9 +110,11 @@ python learning_assistant_gradio.py
 - "서울에서 뉴욕까지 항공권 검색해줘"
 
 ### 학습 도우미 시스템
-- "Python에서 리스트와 딕셔너리의 차이점은 무엇인가요?"
-- "영어에서 현재완료와 과거시제의 차이를 설명해주세요."
-- "한국 임진왜란의 주요 원인과 영향은 무엇인가요?"
+- "Python에서 리스트와 딕셔너리의 차이점은 무엇인가요?" (프로그래밍)
+- "영어에서 현재완료와 과거시제의 차이를 설명해주세요." (언어 학습)
+- "한국 임진왜란의 주요 원인과 영향은 무엇인가요?" (역사)
+- "오늘 서울 날씨는 어떤가요?" (웹 검색)
+- "최근 인공지능 기술 동향을 알려주세요." (웹 검색)
 
 ## 문제 해결
 
@@ -111,6 +122,7 @@ python learning_assistant_gradio.py
 - OpenAI API 오류: `.env` 파일에 API 키가 올바르게 설정되었는지, 그리고 충분한 크레딧이 있는지 확인하세요
 - 브라우저가 나타나지 않는 경우: 스크립트에서 `headless=False`로 설정되어 있는지 확인하세요
 - Gradio 버전 호환성 문제: `pip install --upgrade gradio`로 최신 버전으로 업데이트하세요
+- 웹 검색 기능이 작동하지 않는 경우: SerpAPI 키가 `.env` 파일에 설정되어 있는지 확인하세요
 
 ## 안전 주의사항
 
@@ -131,10 +143,11 @@ python learning_assistant_gradio.py
 ### OpenAI Agents SDK 학습 도우미
 1. 사용자의 질문을 입력 받음
 2. 가드레일을 통해 부적절한 콘텐츠 여부 확인
-3. 분류 에이전트가 질문 유형 파악 (프로그래밍, 언어 학습, 역사)
+3. 분류 에이전트가 질문 유형 파악 (프로그래밍, 언어 학습, 역사, 웹 검색)
 4. 적합한 전문 에이전트로 질문 전달
-5. 전문 에이전트의 답변을 사용자에게 표시
-6. Gradio 웹 인터페이스는 위 과정을 웹 브라우저에서 사용 가능하게 구현
+5. 웹 검색 에이전트의 경우 SerpAPI를 사용하여 실시간 정보 검색
+6. 전문 에이전트의 답변을 사용자에게 표시
+7. Gradio 웹 인터페이스는 위 과정을 웹 브라우저에서 사용 가능하게 구현
 
 ## 라이센스
 
@@ -145,4 +158,5 @@ MIT
 - [OpenAI Computer Use 문서](https://platform.openai.com/docs/guides/computer-use)
 - [Playwright 문서](https://playwright.dev/python/docs/intro)
 - [OpenAI Agents SDK 문서](https://openai.github.io/openai-agents-python/)
-- [Gradio 문서](https://www.gradio.app/docs/) 
+- [Gradio 문서](https://www.gradio.app/docs/)
+- [SerpAPI 문서](https://serpapi.com/docs) 
