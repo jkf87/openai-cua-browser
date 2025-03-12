@@ -4,12 +4,23 @@ import base64
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 from openai import OpenAI
+import logging
 
 # Load environment variables
 load_dotenv()
 
+# 로깅 설정
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# API 키 유효성 검증
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key or api_key == "your_api_key_here":
+    logging.error("OpenAI API key not set or invalid.")
+    raise ValueError("Please set a valid OpenAI API key in your .env file")
+
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=api_key)
+logging.debug(f"OpenAI API 키: {api_key[:8]}...")
 
 def handle_model_action(page, action):
     """
@@ -101,6 +112,15 @@ def handle_model_action(page, action):
         elif action_type == "screenshot":
             print("Action: screenshot")
             # Nothing to do here as we take screenshots after every action
+
+        elif action_type == "navigate":
+            url = action.url
+            print(f"Action: navigate to URL '{url}'")
+            logging.debug(f"Navigating to: {url}")
+            # URL이 http로 시작하지 않는 경우 http://를 추가
+            if not url.startswith("http"):
+                url = "https://" + url
+            page.goto(url)
 
         else:
             print(f"Unrecognized action: {action_type}")
@@ -214,9 +234,24 @@ def start_browsing_session(user_task):
         browser = playwright.chromium.launch(headless=False)  # Set to True for headless mode
         page = browser.new_page(viewport={"width": 1024, "height": 768})
         
-        # Start with Google
-        start_url = "https://www.google.com"
-        page.goto(start_url)
+        # 환경변수에서 시작 URL 설정
+        start_url = os.getenv("DEFAULT_START_URL", "https://www.google.com")
+        logging.debug(f"시작 URL: {start_url}")
+        
+        # 한국어 작업이 많다면 네이버로 시작할지 확인
+        if "네이버" in user_task.lower() or "naver" in user_task.lower():
+            start_url = "https://www.naver.com"
+            logging.debug(f"네이버 관련 태스크 감지, 시작 URL 변경: {start_url}")
+        
+        # URL로 이동
+        try:
+            logging.debug(f"페이지 이동 시도: {start_url}")
+            page.goto(start_url)
+            logging.debug(f"현재 URL: {page.url}")
+        except Exception as e:
+            logging.error(f"페이지 이동 실패: {e}")
+            # 실패 시 구글로 대체
+            page.goto("https://www.google.com")
         
         # Take initial screenshot
         screenshot_base64 = get_screenshot(page)
@@ -277,6 +312,8 @@ def main():
     print("- Check the weather in Seoul")
     print("- Look up news about OpenAI on Bing")
     print("- Book a flight ticket to New York")
+    
+    logging.debug("Starting Computer-Using Agent...")
     
     try:
         while True:
