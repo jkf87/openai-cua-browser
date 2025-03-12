@@ -9,12 +9,10 @@ OpenAI Agents SDK를 활용한 학습 도우미 시스템 예제
 
 import os
 import asyncio
-import aiohttp
-import json
-from urllib.parse import quote_plus
 from agents import Agent, Runner, InputGuardrail, GuardrailFunctionOutput
 from agents.exceptions import InputGuardrailTripwireTriggered
-from pydantic import BaseModel, Field
+from agents.tool import WebSearchTool
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # 환경 변수 로드
@@ -31,60 +29,6 @@ class ContentCheck(BaseModel):
     is_appropriate: bool
     reasoning: str
     contains_harmful_content: bool
-
-
-# 웹 검색 결과 모델 정의
-class WebSearchResult(BaseModel):
-    query: str = Field(..., description="검색한 쿼리")
-    results: list[str] = Field(..., description="검색 결과 목록")
-
-
-# 웹 검색 함수 구현
-async def search_web(query: str) -> WebSearchResult:
-    """간단한 웹 검색을 수행하는 함수입니다."""
-    search_url = f"https://serpapi.com/search.json?q={quote_plus(query)}&api_key={os.getenv('SERPAPI_KEY')}"
-    
-    # SerpAPI 키가 없는 경우 더미 검색 결과 반환
-    if not os.getenv('SERPAPI_KEY'):
-        print("알림: SERPAPI_KEY가 설정되지 않아 더미 검색 결과를 반환합니다.")
-        return WebSearchResult(
-            query=query,
-            results=[
-                f"{query}에 대한 검색 결과 1: 관련 정보를 찾을 수 있습니다.",
-                f"{query}에 대한 검색 결과 2: 더 많은 세부 정보가 있습니다.",
-                f"{query}에 대한 검색 결과 3: 추가 관련 정보도 있습니다.",
-                "참고: 실제 검색 결과를 얻으려면 .env 파일에 SERPAPI_KEY를 설정하세요."
-            ]
-        )
-    
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(search_url) as response:
-                if response.status != 200:
-                    return WebSearchResult(
-                        query=query,
-                        results=[f"검색 중 오류가 발생했습니다. 상태 코드: {response.status}"]
-                    )
-                
-                data = await response.json()
-                organic_results = data.get("organic_results", [])
-                
-                results = []
-                for result in organic_results[:5]:  # 상위 5개 결과만 가져옴
-                    title = result.get("title", "제목 없음")
-                    snippet = result.get("snippet", "내용 없음")
-                    link = result.get("link", "#")
-                    results.append(f"{title}\n{snippet}\n출처: {link}\n")
-                
-                if not results:
-                    results = [f"{query}에 대한 검색 결과가 없습니다."]
-                
-                return WebSearchResult(query=query, results=results)
-        except Exception as e:
-            return WebSearchResult(
-                query=query,
-                results=[f"검색 중 예외가 발생했습니다: {str(e)}"]
-            )
 
 
 # 콘텐츠 적절성 검사 에이전트
@@ -145,7 +89,7 @@ history_agent = Agent(
 )
 
 
-# 웹 검색 에이전트 정의
+# 웹 검색 에이전트 정의 - WebSearchTool 사용
 web_search_agent = Agent(
     name="웹 검색 도우미",
     handoff_description="최신 정보나 실시간 데이터가 필요한 질문을 처리하는 웹 검색 에이전트",
@@ -159,7 +103,7 @@ web_search_agent = Agent(
 검색 결과를 바탕으로 명확하고 정확한 답변을 제공하세요. 
 검색 결과가 충분하지 않을 경우, 더 구체적인 검색이 필요함을 안내하세요.
 정보의 출처를 함께 제공하여 신뢰성을 높이세요.""",
-    tools=[search_web]
+    tools=[WebSearchTool()],
 )
 
 
@@ -189,7 +133,7 @@ triage_agent = Agent(
 - 프로그래밍 도우미: 코딩, 프로그래밍, 알고리즘 관련 질문
 - 언어 학습 도우미: 외국어, 문법, 번역 관련 질문
 - 역사 전문가: 역사적 사건, 인물, 시대 관련 질문
-- 웹 검색 도우미: 최신 정보, 뉴스, 실시간 데이터가 필요한 질문
+- 웹 검색 도우미: 최신 정보, 뉴스, 날씨, 실시간 데이터가 필요한 질문
 
 명확하지 않은 경우, 사용자에게 추가 정보를 요청하세요.""",
     handoffs=[programming_agent, language_agent, history_agent, web_search_agent],
@@ -248,30 +192,9 @@ async def main():
         result = await Runner.run(triage_agent, inappropriate_question)
         print(f"응답:\n{result.final_output}\n")
     except InputGuardrailTripwireTriggered as e:
-        print(f"가드레일 발동: 부적절한 콘텐츠가 감지되어 처리가 중단되었습니다.\n")
+        print(f"가드레일 발동: {e}\n")
     except Exception as e:
         print(f"오류 발생: {e}\n")
-
-    # 사용자 입력 받기
-    while True:
-        user_input = input("\n질문을 입력하세요 (종료하려면 'exit' 입력): ")
-        if user_input.lower() == 'exit':
-            break
-        
-        if not user_input.strip():
-            print("질문을 입력해주세요.")
-            continue
-        
-        print("\n처리 중...\n")
-        try:
-            result = await Runner.run(triage_agent, user_input)
-            print(f"응답:\n{result.final_output}\n")
-        except InputGuardrailTripwireTriggered as e:
-            print(f"가드레일 발동: 부적절한 콘텐츠가 감지되어 처리가 중단되었습니다.\n")
-        except Exception as e:
-            print(f"오류 발생: {e}\n")
-    
-    print("\n프로그램을 종료합니다. 감사합니다!")
 
 
 if __name__ == "__main__":
