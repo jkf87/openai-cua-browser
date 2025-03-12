@@ -9,9 +9,12 @@ OpenAI Agents SDK를 활용한 학습 도우미 시스템 예제
 
 import os
 import asyncio
+import aiohttp
+import json
+from urllib.parse import quote_plus
 from agents import Agent, Runner, InputGuardrail, GuardrailFunctionOutput
 from agents.exceptions import InputGuardrailTripwireTriggered
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
 # 환경 변수 로드
@@ -28,6 +31,60 @@ class ContentCheck(BaseModel):
     is_appropriate: bool
     reasoning: str
     contains_harmful_content: bool
+
+
+# 웹 검색 결과 모델 정의
+class WebSearchResult(BaseModel):
+    query: str = Field(..., description="검색한 쿼리")
+    results: list[str] = Field(..., description="검색 결과 목록")
+
+
+# 웹 검색 함수 구현
+async def search_web(query: str) -> WebSearchResult:
+    """간단한 웹 검색을 수행하는 함수입니다."""
+    search_url = f"https://serpapi.com/search.json?q={quote_plus(query)}&api_key={os.getenv('SERPAPI_KEY')}"
+    
+    # SerpAPI 키가 없는 경우 더미 검색 결과 반환
+    if not os.getenv('SERPAPI_KEY'):
+        print("알림: SERPAPI_KEY가 설정되지 않아 더미 검색 결과를 반환합니다.")
+        return WebSearchResult(
+            query=query,
+            results=[
+                f"{query}에 대한 검색 결과 1: 관련 정보를 찾을 수 있습니다.",
+                f"{query}에 대한 검색 결과 2: 더 많은 세부 정보가 있습니다.",
+                f"{query}에 대한 검색 결과 3: 추가 관련 정보도 있습니다.",
+                "참고: 실제 검색 결과를 얻으려면 .env 파일에 SERPAPI_KEY를 설정하세요."
+            ]
+        )
+    
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.get(search_url) as response:
+                if response.status != 200:
+                    return WebSearchResult(
+                        query=query,
+                        results=[f"검색 중 오류가 발생했습니다. 상태 코드: {response.status}"]
+                    )
+                
+                data = await response.json()
+                organic_results = data.get("organic_results", [])
+                
+                results = []
+                for result in organic_results[:5]:  # 상위 5개 결과만 가져옴
+                    title = result.get("title", "제목 없음")
+                    snippet = result.get("snippet", "내용 없음")
+                    link = result.get("link", "#")
+                    results.append(f"{title}\n{snippet}\n출처: {link}\n")
+                
+                if not results:
+                    results = [f"{query}에 대한 검색 결과가 없습니다."]
+                
+                return WebSearchResult(query=query, results=results)
+        except Exception as e:
+            return WebSearchResult(
+                query=query,
+                results=[f"검색 중 예외가 발생했습니다: {str(e)}"]
+            )
 
 
 # 콘텐츠 적절성 검사 에이전트
@@ -88,6 +145,24 @@ history_agent = Agent(
 )
 
 
+# 웹 검색 에이전트 정의
+web_search_agent = Agent(
+    name="웹 검색 도우미",
+    handoff_description="최신 정보나 실시간 데이터가 필요한 질문을 처리하는 웹 검색 에이전트",
+    instructions="""당신은 웹 검색 전문가입니다. 사용자의 질문에 대한 최신 정보를 제공하기 위해 웹 검색을 수행합니다.
+다음과 같은 질문에 특히 유용합니다:
+- 최신 뉴스나 시사 이슈
+- 현재 날씨나 예보
+- 특정 주제에 대한 최근 정보
+- 실시간 데이터가 필요한 질문
+
+검색 결과를 바탕으로 명확하고 정확한 답변을 제공하세요. 
+검색 결과가 충분하지 않을 경우, 더 구체적인 검색이 필요함을 안내하세요.
+정보의 출처를 함께 제공하여 신뢰성을 높이세요.""",
+    tools=[search_web]
+)
+
+
 # 가드레일 함수 정의
 async def content_guardrail(ctx, agent, input_data):
     # 콘텐츠 검사 에이전트 실행
@@ -110,8 +185,14 @@ triage_agent = Agent(
     name="질문 분류 에이전트",
     instructions="""사용자의 질문을 분석하여 가장 적합한 전문가에게 연결하는 역할을 합니다.
 각 전문 에이전트의 전문 분야를 고려하여 최적의 선택을 하세요.
+
+- 프로그래밍 도우미: 코딩, 프로그래밍, 알고리즘 관련 질문
+- 언어 학습 도우미: 외국어, 문법, 번역 관련 질문
+- 역사 전문가: 역사적 사건, 인물, 시대 관련 질문
+- 웹 검색 도우미: 최신 정보, 뉴스, 실시간 데이터가 필요한 질문
+
 명확하지 않은 경우, 사용자에게 추가 정보를 요청하세요.""",
-    handoffs=[programming_agent, language_agent, history_agent],
+    handoffs=[programming_agent, language_agent, history_agent, web_search_agent],
     input_guardrails=[
         InputGuardrail(guardrail_function=content_guardrail),
     ],
@@ -147,6 +228,15 @@ async def main():
     print(f"질문: {history_question}")
     try:
         result = await Runner.run(triage_agent, history_question)
+        print(f"응답:\n{result.final_output}\n")
+    except Exception as e:
+        print(f"오류 발생: {e}\n")
+    
+    # 웹 검색 관련 질문
+    web_search_question = "오늘 서울 날씨는 어떤가요?"
+    print(f"질문: {web_search_question}")
+    try:
+        result = await Runner.run(triage_agent, web_search_question)
         print(f"응답:\n{result.final_output}\n")
     except Exception as e:
         print(f"오류 발생: {e}\n")
